@@ -18,21 +18,19 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 # ====== 你的专属配置区 ======
-# 请在此处填入你的 Telegram Bot Token
-TELEGRAM_BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+TELEGRAM_BOT_TOKEN = "8779795912:AAGAb92XBJzNQkYzhpd8vY3jwXbvVqKAnfQ"
 
-# 请在此处填入你的 E-Hentai / ExHentai 登录 Cookie
 EH_COOKIES = dict(
-    igneous="YOUR_IGNEOUS_COOKIE",
-    ipb_member_id="YOUR_IPB_MEMBER_ID",
-    ipb_pass_hash="YOUR_IPB_PASS_HASH",
-    nw="1" # 强制绕过内容警告弹窗，请勿修改
+    igneous="td4ntdeh4nceib1px",
+    ipb_member_id="9213034",
+    ipb_pass_hash="7cfd101b628d0baf1a46e37aa64befde",
+    nw="1"
 )
 # ========================
 
 jm_download_lock = asyncio.Lock()
 
-# 【核心功能】：在内存中瞬间将 WEBP 等格式洗成标准的 JPEG，专门对付 Telegram 的格式封杀
+# 内存中格式转码
 def ensure_jpeg(img_bytes):
     try:
         img = Image.open(io.BytesIO(img_bytes))
@@ -44,7 +42,6 @@ def ensure_jpeg(img_bytes):
         img.save(out, format='JPEG', quality=90)
         return out.getvalue()
     except Exception as e:
-        print(f"图像转码警告: {e}")
         return img_bytes
 
 # 1. Nhentai 全本提取引擎
@@ -96,7 +93,7 @@ async def fetch_nhentai(gallery_id: str, msg: Update.message, context, chat_id):
                     
         return title
 
-# 2. E-Hentai / ExHentai 全本提取引擎
+# 2. E-Hentai / ExHentai 全本提取引擎 (已退回 httpx 并加入防死链 NL 回退机制)
 async def fetch_ehentai(clean_url: str, msg: Update.message, context, chat_id):
     await msg.edit_text("🔞 [EH/EX] 正在注入凭证并扫描全本画廊目录...")
     
@@ -107,10 +104,14 @@ async def fetch_ehentai(clean_url: str, msg: Update.message, context, chat_id):
     page_num = 0
     title = "EH/EX Gallery"
     
-    async with httpx.AsyncClient(timeout=30.0, cookies=EH_COOKIES, headers=headers) as client:
+    # 恢复使用稳定版 httpx 处理 EHentai
+    async with httpx.AsyncClient(timeout=30.0, cookies=EH_COOKIES, headers=headers, follow_redirects=True) as client:
         while True:
             page_url = f"{clean_url}?p={page_num}"
-            resp = await client.get(page_url)
+            try:
+                resp = await client.get(page_url)
+            except Exception as e:
+                raise Exception(f"网络连接出错，无法获取目录: {e}")
             
             if "kokomade.jpg" in resp.text or resp.text.strip() == "":
                 page_url = page_url.replace("exhentai.org", "e-hentai.org")
@@ -140,20 +141,48 @@ async def fetch_ehentai(clean_url: str, msg: Update.message, context, chat_id):
         if not viewer_links:
             raise Exception("无法提取阅读页链接，可能触发了高频访问限制。")
             
-        await msg.edit_text(f"🔞 [EH/EX] 扫描完成！共 {len(viewer_links)} 张，开始边下边发...")
+        await msg.edit_text(f"🔞 [EH/EX] 扫描完成！共 {len(viewer_links)} 张，开始绕过 P2P 节点进行边下边发...")
             
         media_group = list()
+        success_count = 0
         for idx, v_url in enumerate(viewer_links):
-            v_resp = await client.get(v_url)
-            img_match = re.search(r'<img id="img" src="(.*?)"', v_resp.text)
-            if img_match:
-                img_src = img_match.group(1)
-                img_data_resp = await client.get(img_src)
-                if img_data_resp.status_code == 200:
-                    img_bytes = ensure_jpeg(img_data_resp.content)
-                    caption = title[:1000] if idx == 0 else None
-                    media_group.append(InputMediaPhoto(media=img_bytes, caption=caption))
-                    
+            try:
+                v_resp = await client.get(v_url)
+                img_match = re.search(r'<img id="img" src="(.*?)"', v_resp.text)
+                # 寻找官方的更换节点指令（New Link参数）
+                nl_match = re.search(r"nl\('([^']+)'\)", v_resp.text)
+                
+                if img_match:
+                    img_src = img_match.group(1)
+                    img_bytes = None
+                    try:
+                        # 第一次尝试：直接从分配到的 H@H 节点下载
+                        img_data_resp = await client.get(img_src, timeout=15.0)
+                        if img_data_resp.status_code == 200:
+                            img_bytes = img_data_resp.content
+                    except Exception as e:
+                        # 【核心修复】：如果节点被墙导致超时/拒绝连接，立即使用 nl 回退到官方中央服务器
+                        if nl_match:
+                            try:
+                                nl_url = f"{v_url}?nl={nl_match.group(1)}"
+                                v_resp_retry = await client.get(nl_url, timeout=15.0)
+                                img_match_retry = re.search(r'<img id="img" src="(.*?)"', v_resp_retry.text)
+                                if img_match_retry:
+                                    img_data_resp = await client.get(img_match_retry.group(1), timeout=15.0)
+                                    if img_data_resp.status_code == 200:
+                                        img_bytes = img_data_resp.content
+                            except Exception:
+                                pass # 彻底失败则跳过该图，不崩溃
+                                
+                    if img_bytes:
+                        img_bytes = ensure_jpeg(img_bytes)
+                        caption = title[:1000] if success_count == 0 else None
+                        media_group.append(InputMediaPhoto(media=img_bytes, caption=caption))
+                        success_count += 1
+                        
+            except Exception as e:
+                print(f"获取页面异常跳过: {e}")
+                
             if len(media_group) == 10 or idx == len(viewer_links) - 1:
                 if len(media_group) > 0:
                     try:
@@ -168,7 +197,7 @@ async def fetch_ehentai(clean_url: str, msg: Update.message, context, chat_id):
             
         return title
 
-# 3. JMComic (禁漫) CWD劫持控制与智能转码提取法
+# 3. JMComic (禁漫) 绝对路径控制提取法
 async def fetch_jmcomic(jm_type: str, jm_id: str, msg: Update.message, context, chat_id):
     type_name = "单章" if jm_type == "photo" else "整本"
     
@@ -176,14 +205,13 @@ async def fetch_jmcomic(jm_type: str, jm_id: str, msg: Update.message, context, 
         safe_dir = os.path.abspath(f"./jm_dl_safe_{jm_id}")
         os.makedirs(safe_dir, exist_ok=True)
         
-        # 强行改变进程的当前工作目录，将下载的文件完全限制在安全文件夹内
         original_cwd = os.getcwd()
         os.chdir(safe_dir)
         
         try:
             option = jmcomic.JmOption.default()
             try:
-                option.client_dict['impl'] = 'api'  # 强制走无阻碍的手机端 API
+                option.client_dict['impl'] = 'api'
             except:
                 pass
                 
@@ -202,7 +230,6 @@ async def fetch_jmcomic(jm_type: str, jm_id: str, msg: Update.message, context, 
         finally:
             os.chdir(original_cwd)
 
-        # 遍历隔离的安全文件夹提取图片
         images = list()
         for root, dirs, files in os.walk(safe_dir):
             for f in files:
@@ -212,7 +239,6 @@ async def fetch_jmcomic(jm_type: str, jm_id: str, msg: Update.message, context, 
         if not images:
             raise Exception("下载任务成功，但在隔离区中未找到图片，文件可能已损坏。")
             
-        # 根据文件名末尾的数字严格排序
         def sort_key(path):
             nums = re.findall(r'\d+', os.path.basename(path))
             return tuple(int(n) for n in nums) if nums else tuple((0,))
@@ -220,12 +246,11 @@ async def fetch_jmcomic(jm_type: str, jm_id: str, msg: Update.message, context, 
         images.sort(key=sort_key)
         return title, images, safe_dir
 
-    # 枷锁防止多请求并发冲突
     async with jm_download_lock:
-        await msg.edit_text(f"🔞 [JMComic] {type_name}请求排队成功！正在拉取原图及执行像素解密...")
+        await msg.edit_text(f"🔞 [JMComic] {type_name}请求排队成功！正在拉取原图及执行解密...")
         title, images, safe_dir = await asyncio.to_thread(download_jm_sync)
         
-    await msg.edit_text(f"🔞 [JMComic] 像素解密完成！捕获 {len(images)} 张图片，正在转码发送中...")
+    await msg.edit_text(f"🔞 [JMComic] 像素解密完成！捕获 {len(images)} 张图片，正在洗图发送中...")
 
     try:
         media_group = list()
@@ -233,7 +258,6 @@ async def fetch_jmcomic(jm_type: str, jm_id: str, msg: Update.message, context, 
             with open(img_path, 'rb') as f:
                 img_bytes = f.read()
                 
-            # 将获取的 WEBP 强制转码成 JPEG 格式，彻底规避 Telegram 格式审查
             img_bytes = ensure_jpeg(img_bytes)
                 
             caption = title[:1000] if idx == 0 else None
@@ -249,7 +273,6 @@ async def fetch_jmcomic(jm_type: str, jm_id: str, msg: Update.message, context, 
                     await msg.edit_text(f"🔞 [JMComic] 正在火速传输中... 进度: {idx+1}/{len(images)}")
                     await asyncio.sleep(2.5)
     finally:
-        # 发送完毕后销毁临时文件，阅后即焚
         shutil.rmtree(safe_dir, ignore_errors=True)
         
     return title
@@ -262,7 +285,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     
     if text.startswith("/start"):
-        await context.bot.send_message(chat_id=chat_id, text="🚀 终极图集提取机器人已就绪！支持 nhentai / e-hentai / exhentai / jmcomic。")
+        await context.bot.send_message(chat_id=chat_id, text="🚀 终极图集提取机器人已就绪！支持 nhentai / e-hentai / jmcomic。")
         return
         
     nh_match = re.search(r'nhentai\.net/g/(\d+)', text)
