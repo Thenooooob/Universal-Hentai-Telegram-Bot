@@ -17,17 +17,16 @@ from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTyp
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
-# ====== 你的专属配置区 ======
-TELEGRAM_BOT_TOKEN = "8779795912:AAGAb92XBJzNQkYzhpd8vY3jwXbvVqKAnfQ"
+# 替换为在 @BotFather 处申请的 Bot Token
+TELEGRAM_BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
 
+# 替换为从浏览器中提取的 ExHentai 登录 Cookie
 EH_COOKIES = dict(
-    igneous="td4ntdeh4nceib1px",
-    ipb_member_id="9213034",
-    ipb_pass_hash="7cfd101b628d0baf1a46e37aa64befde",
-    nw="1"
+    igneous="YOUR_IGNEOUS_COOKIE",
+    ipb_member_id="YOUR_IPB_MEMBER_ID",
+    ipb_pass_hash="YOUR_IPB_PASS_HASH",
+    nw="1" # 强制跳过敏感警告弹窗
 )
-# ========================
-
 jm_download_lock = asyncio.Lock()
 
 # 内存中格式转码
