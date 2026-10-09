@@ -1,88 +1,72 @@
-🚀 Universal Hentai Telegram Bot
-一个全功能、高性能、抗封锁的 Telegram 漫画图库抓取机器人。支持向 Bot 发送漫画链接或车号，Bot 会自动绕过网络防护、抓取全本高清图片、完成解密，并以**原生 Telegram 媒体相册（Media Group）**的形式分批发送给你，支持边下边发与阅后即焚。
+# 🚀 Universal Hentai Telegram Bot
 
-✨ 核心特性
-Nhentai：通过集成 curl_cffi 模拟真实浏览器底层 TLS 指纹，完美绕过 Cloudflare 5s 盾与人机验证验证码。
+一个 Telegram 漫画图库抓取机器人。向 Bot 发送 nhentai / E-Hentai / ExHentai / 禁漫(JMComic) 链接或车号，Bot 会抓取全本图片，默认整合为一个 **Telegraph 即时浏览（Instant View）** 页面一键发送；也可改为原生媒体相册逐批发送。
 
-E-Hentai / ExHentai：自动注入个人 Cookie 突破里站封锁，支持多页面的自动翻页与源站防盗链图像抓取。
+## ✨ 特性
 
-JMComic (禁漫天堂)：
+- **nhentai**：使用官方 API v2 + `curl_cffi` 浏览器 TLS 指纹，自动拉取最新 CDN 节点。
+- **E-Hentai / ExHentai**：注入个人 Cookie 访问里站，自动翻页；H@H 节点不可达时用 `nl` 参数回退官方服务器。
+- **JMComic**：基于 `jmcomic` 库（APP API），识别 photo（单章）/ album（整本）链接与 `JM123456` 车号，自动完成图片切割解密；下载在独立临时目录进行，发送后自动删除。
+- **即时浏览**：图片上传 catbox（填 userhash 为永久）或 litterbox（72h 临时）后生成 Telegraph 页面，超过 100 张自动分页；生成失败自动回退为媒体相册。
+- **格式转码**：Pillow 在内存中把 WebP 等格式转为 JPEG。
 
-深度集成 jmcomic 库，智能识别 photo（单章）与 album（全本）链接。
+## 🛠️ 安装
 
-自动调用 APP 端隐藏 API 彻底无视 Cloudflare 网页端拦截。
+需要 Python 3.10+。
 
-自动执行复杂的**图片像素切割重组解密（Image Scramble）**算法。
-
-通过 CWD 劫持技术将所有解密文件死死限制在隔离区，防止服务器环境污染。
-
-内存级格式洗白：内置 Pillow 转码引擎，在发送前毫秒级将 Telegram 不支持的 WebP 动图/静态图洗白为标准 JPEG，彻底解决"文件不支持"或"图标破碎"问题。
-
-内存友好与防封控机制：
-
-边下边发：每凑齐 10 张图立即推送至 Telegram 客户端并释放内存，几百页的本子也能顺滑浏览，永不 OOM。
-
-阅后即焚：发送完成后自动销毁本地隔离文件夹，绝不占用服务器硬盘空间。
-
-HTML 级防错：消息反馈面板使用 HTML 转义技术，免疫各类奇怪标题引发的 Telegram Markdown 解析崩溃。
-
-🛠️ 安装与部署
-1. 环境要求
-推荐使用海外 VPS（如 Ubuntu 22.04 / Debian 11 等）
-
-Python 3.9 或更高版本
-
-2. 克隆与安装依赖bash
-git clone https://github.com/你的用户名/Universal-Hentai-Bot.git
-cd Universal-Hentai-Bot
-
-建议使用虚拟环境
+```bash
+git clone https://github.com/Thenooooob/Universal-Hentai-Telegram-Bot.git
+cd Universal-Hentai-Telegram-Bot
 python3 -m venv venv
 source venv/bin/activate
+pip install -r requirements.txt
+```
 
-安装所需的核心依赖
-pip install python-telegram-bot curl_cffi httpx beautifulsoup4 jmcomic Pillow
+## ⚙️ 配置
 
+所有敏感信息都从环境变量或同目录下的 `.env` 读取，**不要写进代码，也不要提交 `.env`**。
 
-### 3. 配置密钥参数
-使用文本编辑器（如 `nano main.py` 或 VSCode）打开 `main.py` 文件，找到顶部的配置区域，修改为你自己的参数：
+```bash
+cp .env.example .env
+nano .env
+```
 
-```python
-# 替换为在 @BotFather 处申请的 Bot Token
-TELEGRAM_BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+| 变量 | 必填 | 说明 |
+| --- | --- | --- |
+| `TELEGRAM_BOT_TOKEN` | 是 | @BotFather 申请的 Token |
+| `EH_IPB_MEMBER_ID` / `EH_IPB_PASS_HASH` | 访问里站时 | 浏览器登录 e-hentai 后从 Cookie 中复制 |
+| `EH_IGNEOUS` / `EH_SK` | 访问里站时 | 登录 exhentai 后从 Cookie 中复制 |
+| `CATBOX_USERHASH` | 否 | catbox.moe 账号 userhash；留空用 litterbox 临时图床 |
 
-# 替换为从浏览器中提取的 ExHentai 登录 Cookie
-EH_COOKIES = dict(
-    igneous="YOUR_IGNEOUS_COOKIE",
-    ipb_member_id="YOUR_IPB_MEMBER_ID",
-    ipb_pass_hash="YOUR_IPB_PASS_HASH",
-    nw="1" # 强制跳过敏感警告弹窗
-)
-4. 运行机器人
-Bash
-# 以后台常驻模式运行
-PYTHONIOENCODING=utf-8 nohup python main.py > bot.log 2>&1 &
+`.env` 示例（占位值）：
 
-# 查看运行日志
-tail -f bot.log
-💬 使用方法
-向你的 Telegram 机器人发送 /start 确保其在线。随后只需直接发送链接或代码：
+```dotenv
+TELEGRAM_BOT_TOKEN=YOUR_TELEGRAM_BOT_TOKEN
+EH_IPB_MEMBER_ID=YOUR_IPB_MEMBER_ID
+EH_IPB_PASS_HASH=YOUR_IPB_PASS_HASH
+EH_IGNEOUS=YOUR_IGNEOUS
+EH_SK=
+CATBOX_USERHASH=
+```
 
-Nhentai:
+投递方式等非敏感选项（`DELIVERY_MODE`、`TELEGRAPH_PAGE_SIZE`、`LITTERBOX_TIME`）在 `main.py` 顶部修改。
 
-发送链接：https://nhentai.net/g/177013/
+## ▶️ 运行
 
-ExHentai / E-Hentai:
+```bash
+python main.py
+```
 
-发送链接：https://exhentai.org/g/xxxxxx/xxxxxxx/
+也可以用 systemd 常驻（`WorkingDirectory` 指向本目录，`ExecStart` 指向 venv 里的 python）。
 
-JMComic:
+## 💬 使用
 
-发送链接：https://18comic.vip/photo/123456
+先发 `/start` 确认在线，然后直接发送：
 
-直接发车号：JM123456
+- nhentai：`https://nhentai.net/g/177013/`
+- E-Hentai / ExHentai：`https://exhentai.org/g/<gid>/<token>/`
+- JMComic：`https://18comic.vip/album/123456`、`https://18comic.vip/photo/123456` 或 `JM123456`
 
-机器人将实时回复当前进度（如排队、脱壳、下载进度、转码），并以 10 张为一组不断发送超高清图像集。
+## 📜 免责声明
 
-📜 免责声明
-本程序仅供 Python 爬虫技术、加密解密算法及逆向工程学习交流使用。请合理控制请求频率，严禁用于任何商业用途或进行大批量恶意攻击。
+本项目仅供学习交流。请遵守当地法律法规与各站点条款，合理控制请求频率，勿用于商业用途。

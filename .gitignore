@@ -1,0 +1,27 @@
+# 真实配置 / 凭据
+.env
+.env.*
+!.env.example
+config.yml
+config.yaml
+*cookie*
+
+# 下载缓存 / 临时文件
+jm_dl_safe_*/
+downloads/
+*.pdf
+*.zip
+
+# 日志 / 数据库
+*.log
+logs/
+*.db
+*.sqlite*
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+env/
+*.bak

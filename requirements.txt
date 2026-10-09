@@ -1,0 +1,5 @@
+python-telegram-bot==22.8
+curl_cffi==0.15.0
+httpx==0.28.1
+jmcomic==2.6.15
+pillow==12.2.0
